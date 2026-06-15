@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "benchmark": "tsx src/index.ts",
+    "benchmark:direct": "NANGO_SECRET_KEY= MERGE_ACCESS_TOKEN= COMPOSIO_API_KEY= TRUTO_API_TOKEN= tsx src/index.ts"
   },
   "keywords": [],
   "author": "",
