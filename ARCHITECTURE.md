@@ -134,6 +134,25 @@ Two things this corrects:
    deployed sync scripts - "less code" is relative (YAML instead of
    TypeScript), not "no setup."
 
+**Firsthand reliability finding, reproduced twice:** their GitHub `issues`
+object maps to GitHub's "list issues assigned to the authenticated user"
+endpoint - a global feed, not scoped to a repo at all, regardless of
+anything configured in `amp.yaml`. On a fresh installation, this 404'd
+immediately (likely a scope or auth nuance with that specific endpoint),
+and Ampersand's internal retry loop classified the 404 as retryable and
+**kept retrying indefinitely** - the operation just sat "In Progress"
+forever in the dashboard, with no cancel button anywhere and no documented
+API to terminate it. Every subsequent on-demand trigger for that
+installation+object got rejected with "concurrent request rejected."
+
+Deleted the installation, created a completely fresh one (new groupRef, new
+connection) - **same failure, immediately, on the very first auto-triggered
+read.** Reproducible, not a fluke. This is a sharper, evidence-backed
+answer to "how do you handle failures" than any of the marketing claims:
+their own retry logic doesn't have a circuit breaker - it doesn't know when
+to give up on a non-transient error, and there's no user-facing way to
+intervene once it's stuck.
+
 ## 3. Merge.dev
 
 Pull, synchronous REST calls. Merge polls the underlying provider on its
@@ -190,32 +209,7 @@ GitHub (and 100+ other apps)
 Weak fit for bulk backfill - Actions are built for "fetch this one thing
 now," not "paginate through 10,000 historical records."
 
-## 5. Truto (ruled out - documenting for completeness)
-
-Architecturally fine - pull, pass-through proxy, same effort as calling
-the provider directly. Disqualified entirely on signup friction (sales
-contact required), not on architecture.
-
-```
-GitHub
-        ▲ pass-through proxy, Link headers come through unchanged
-        │
-┌─────────────────────────────┐
-│            TRUTO               │
-│  Thin proxy, zero data         │
-│  retention                     │
-└─────────────────────────────┘
-        ▲ GET /proxy/github/... (sync)
-        │
-┌─────────────┐
-│ your app     │
-└─────────────┘
-        │
-        ▼
-[Raw Landing Zone] (custom) → [Ingestion Manifest] (custom)
-```
-
-## 6. Airbyte / Fivetran
+## 5. Airbyte / Fivetran
 
 Their connector polls the source on their own infra; data lands in a
 destination warehouse you own. From your app's perspective, you just query
@@ -246,7 +240,7 @@ Closest to a "managed raw landing zone" if you configure it that way, but
 batch-oriented (sync runs on a schedule, adds a warehouse hop, not built
 for live agent tool calls).
 
-## 7. Alloy
+## 6. Alloy
 
 Push-first (event-driven webhook → workflow → calls your API), but also
 supports a manual/scheduled pull mode. No cursor/incremental-sync
@@ -279,15 +273,15 @@ arbitrary historical window."
 
 ## The operational concerns, side by side
 
-| Concern | Nango | Ampersand | Merge.dev | Composio | Truto | Airbyte/Fivetran | Alloy |
-|---|---|---|---|---|---|---|---|
-| Incremental sync | Auto via Sync engine, manual via proxy | Manual (`sinceTimestamp`) | Manual (`modified_after`) | Manual | Manual | Auto, native per connector | No primitive at all |
-| Replay | No | No | No (never see raw) | No | No | Partial, if raw JSON kept in destination | Yes - replays one past execution |
-| Idempotency | Partial (Records API dedupes via Sync) | You manage | Partial (stable IDs) | You manage | You manage | Yes - upsert by primary key | You manage on receipt |
-| Failed processing → DLQ | Partial (retries own errors only) | Unclear, assume you manage | You manage | You manage | You manage | Limited (job-level retry only) | Manual rerun = DLQ recovery |
-| Rate limits | Auto | Claims auto, unverified | Auto (internal) | Claims auto | None - pass-through | Auto, mature connectors | N/A (push) / weak (pull mode) |
-| Backfill | Native, configurable window | Manual (omit timestamp) | Manual pagination | Manual | Manual | Native, resumable | Not really a concept |
-| Webhook + polling | Both | Both (poll status + receive webhook) | Polling only | Both (Actions=pull, Triggers=push) | Polling only | Polling + on-demand trigger | Webhook-first, manual pull supported |
+| Concern | Nango | Ampersand | Merge.dev | Composio | Airbyte/Fivetran | Alloy |
+|---|---|---|---|---|---|---|
+| Incremental sync | Auto via Sync engine, manual via proxy | Manual (`sinceTimestamp`) | Manual (`modified_after`) | Manual | Auto, native per connector | No primitive at all |
+| Replay | No | No | No (never see raw) | No | Partial, if raw JSON kept in destination | Yes - replays one past execution |
+| Idempotency | Partial (Records API dedupes via Sync) | You manage | Partial (stable IDs) | You manage | Yes - upsert by primary key | You manage on receipt |
+| Failed processing → DLQ | Partial (retries own errors only) | **Confirmed broken** - retries a non-retryable 404 forever, no cancel mechanism (reproduced on 2 fresh installations) | You manage | You manage | Limited (job-level retry only) | Manual rerun = DLQ recovery |
+| Rate limits | Auto | Claims auto, unverified | Auto (internal) | Claims auto | Auto, mature connectors | N/A (push) / weak (pull mode) |
+| Backfill | Native, configurable window | Native config exists, but the one we triggered got stuck before completing | Manual pagination | Manual | Native, resumable | Not really a concept |
+| Webhook + polling | Both | Both (poll status + receive webhook) | Polling only | Both (Actions=pull, Triggers=push) | Polling + on-demand trigger | Webhook-first, manual pull supported |
 
 ## The unified picture - if I were building this
 
