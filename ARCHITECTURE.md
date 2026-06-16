@@ -153,6 +153,38 @@ their own retry logic doesn't have a circuit breaker - it doesn't know when
 to give up on a non-transient error, and there's no user-facing way to
 intervene once it's stuck.
 
+**Root cause found and fixed:** the GitHub OAuth App registered in
+Ampersand's dashboard was requesting invalid scopes - literally `repos` and
+`repositories`, neither of which are real GitHub OAuth scopes (the correct
+one is `repo`). GitHub silently grants a permission-less token for
+unrecognized scopes, and returns 404 instead of 403 for under-scoped
+requests on this specific endpoint (a deliberate GitHub API design choice
+to avoid leaking resource existence) - which is what fed the infinite retry
+loop above. Fixed it in the dashboard's OAuth Provider App config, redid
+the OAuth flow, and on the next fresh installation:
+
+- The stuck-forever bug didn't recur
+- Backfill correctly delivered all 5 historical issues
+- **Measured real end-to-end latency, decoupled from any wait-window
+  assumptions:** triggered at `13:01:25.049Z`, Ampersand's internal
+  processing finished at `13:01:27.122Z` (~2.07s), webhook delivery (via
+  Svix) landed at `13:01:27.868Z` (~750ms more) - **~2.8s trigger-to-delivery
+  total.** Not sub-second as marketed, but a real, defensible number now,
+  not a guess.
+- **Correction on the replay finding:** the webhook payload includes both
+  `fields` (normalized) and a `raw` key with the complete, untouched GitHub
+  API response (every nested field - assignee, repository, permissions,
+  everything). Ampersand doesn't replay this for you, but if you persist it
+  yourself, you actually have what's needed - unlike Merge.dev, which never
+  exposes raw provider data under any circumstance.
+
+So the final picture isn't "Ampersand is broken" - it's "Ampersand had a
+real, reproducible, customer-facing bug (bad default OAuth scopes + no
+circuit breaker on non-transient errors), and once fixed, it performed
+reasonably well, with one genuine point in its favor (raw payload access)
+that Merge.dev doesn't have." That's a more credible, complete story than
+either "their marketing is all true" or "this platform doesn't work."
+
 ## 3. Merge.dev
 
 Pull, synchronous REST calls. Merge polls the underlying provider on its
@@ -276,11 +308,11 @@ arbitrary historical window."
 | Concern | Nango | Ampersand | Merge.dev | Composio | Airbyte/Fivetran | Alloy |
 |---|---|---|---|---|---|---|
 | Incremental sync | Auto via Sync engine, manual via proxy | Manual (`sinceTimestamp`) | Manual (`modified_after`) | Manual | Auto, native per connector | No primitive at all |
-| Replay | No | No | No (never see raw) | No | Partial, if raw JSON kept in destination | Yes - replays one past execution |
+| Replay | No | **Confirmed - webhook payload includes a `raw` field with the complete untouched provider response, alongside `fields` (normalized). They don't replay it for you, but if you store it yourself, you have what you need - unlike Merge.dev which never exposes raw data at all** | No (never see raw) | No | Partial, if raw JSON kept in destination | Yes - replays one past execution |
 | Idempotency | Partial (Records API dedupes via Sync) | You manage | Partial (stable IDs) | You manage | Yes - upsert by primary key | You manage on receipt |
-| Failed processing → DLQ | Partial (retries own errors only) | **Confirmed broken** - retries a non-retryable 404 forever, no cancel mechanism (reproduced on 2 fresh installations) | You manage | You manage | Limited (job-level retry only) | Manual rerun = DLQ recovery |
+| Failed processing → DLQ | Partial (retries own errors only) | Mixed - confirmed both a stuck-retry-forever bug (bad OAuth scope causing 404s with no circuit breaker) AND, once fixed, a working delivery within ~2.8s end-to-end | You manage | You manage | Limited (job-level retry only) | Manual rerun = DLQ recovery |
 | Rate limits | Auto | Claims auto, unverified | Auto (internal) | Claims auto | Auto, mature connectors | N/A (push) / weak (pull mode) |
-| Backfill | Native, configurable window | Native config exists, but the one we triggered got stuck before completing | Manual pagination | Manual | Native, resumable | Not really a concept |
+| Backfill | Native, configurable window | Confirmed working once OAuth scope was fixed - `fullHistory: true` delivered all 5 historical issues correctly | Manual pagination | Manual | Native, resumable | Not really a concept |
 | Webhook + polling | Both | Both (poll status + receive webhook) | Polling only | Both (Actions=pull, Triggers=push) | Polling + on-demand trigger | Webhook-first, manual pull supported |
 
 ## The unified picture - if I were building this

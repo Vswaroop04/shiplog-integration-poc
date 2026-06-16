@@ -92,8 +92,11 @@ export class AmpersandAdapter implements IntegrationAdapter {
         throw new Error(`Ampersand read did not complete successfully (status: ${status})`);
       }
 
-      // Give the webhook a few seconds to actually arrive after "success"
-      await Promise.race([firstRecord, new Promise(r => setTimeout(r, 8000))]);
+      // Measured real-world delivery (trigger -> Svix webhook landing) at
+      // ~2.8s end to end in testing, but with some variance (ngrok free
+      // tier cold starts, etc) - 15s gives real runs margin without
+      // making a genuinely stuck operation wait forever.
+      await Promise.race([firstRecord, new Promise(r => setTimeout(r, 15000))]);
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
