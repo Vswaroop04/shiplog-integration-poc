@@ -8,6 +8,7 @@ import { TrutoAdapter } from "./adapters/truto";
 import { runAdapter, printReport } from "./runner";
 import { runPaginationBenchmark } from "./tests/pagination";
 import { runRateLimitBenchmark } from "./tests/rate-limit";
+import { runFailureReplayBenchmark } from "./tests/failures-replay";
 import { IntegrationAdapter } from "./adapters/base";
 import chalk from "chalk";
 
@@ -45,6 +46,7 @@ async function main() {
 
   await runPaginationBenchmark(OWNER, REPO);
   await runRateLimitBenchmark(OWNER, REPO);
+  await runFailureReplayBenchmark(OWNER, REPO);
 }
 
 main().catch(err => {
