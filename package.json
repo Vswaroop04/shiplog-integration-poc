@@ -6,7 +6,8 @@
   "scripts": {
     "benchmark": "tsx src/index.ts",
     "benchmark:direct": "NANGO_SECRET_KEY= MERGE_ACCESS_TOKEN= COMPOSIO_API_KEY= TRUTO_API_TOKEN= tsx src/index.ts",
-    "listen": "tsx scripts/listen.ts"
+    "listen": "tsx scripts/listen.ts",
+    "connect": "tsx scripts/connect.ts"
   },
   "keywords": [],
   "author": "",
