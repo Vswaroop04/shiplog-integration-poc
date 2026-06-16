@@ -52,6 +52,7 @@ export function printReport(results: (SyncResult | null)[]) {
     "Truto": chalk.green("No (pass-through)"),
     "Airbyte": "Yes (your warehouse)",
     "Fivetran": "Yes (your warehouse)",
+    "Ampersand": "Pushed to your webhook",
   };
 
   for (const r of results) {

@@ -7,6 +7,7 @@ import { ComposioAdapter } from "./adapters/composio";
 import { TrutoAdapter } from "./adapters/truto";
 import { AirbyteAdapter } from "./adapters/airbyte";
 import { FivetranAdapter } from "./adapters/fivetran";
+import { AmpersandAdapter } from "./adapters/ampersand";
 import { runAdapter, printReport } from "./runner";
 import { runPaginationBenchmark } from "./tests/pagination";
 import { runRateLimitBenchmark } from "./tests/rate-limit";
@@ -23,7 +24,7 @@ async function main() {
   initDb();
 
   console.log(chalk.bold(`\n🔬 Integration Benchmark — github.com/${OWNER}/${REPO}`));
-  console.log(chalk.gray("Platforms: Direct API, Nango, Merge.dev, Composio, Truto, Airbyte, Fivetran\n"));
+  console.log(chalk.gray("Platforms: Direct API, Nango, Merge.dev, Composio, Truto, Airbyte, Fivetran, Ampersand\n"));
 
   // Each adapter is only included if its required env vars are present.
   // Run `npm run benchmark` to run all configured platforms.
@@ -35,9 +36,10 @@ async function main() {
     ...(process.env.TRUTO_API_TOKEN && process.env.TRUTO_INTEGRATION_ACCOUNT_ID ? [new TrutoAdapter()] : []),
     ...(process.env.AIRBYTE_API_TOKEN && process.env.AIRBYTE_CONNECTION_ID ? [new AirbyteAdapter()] : []),
     ...(process.env.FIVETRAN_API_KEY && process.env.FIVETRAN_CONNECTOR_ID ? [new FivetranAdapter()] : []),
+    ...(process.env.AMPERSAND_API_KEY && process.env.AMPERSAND_INTEGRATION_ID ? [new AmpersandAdapter()] : []),
   ];
 
-  const skipped = 7 - adapters.length;
+  const skipped = 8 - adapters.length;
   if (skipped > 0) {
     console.log(chalk.yellow(`⚠ ${skipped} platform(s) skipped — missing env vars (see .env.example)\n`));
   }
