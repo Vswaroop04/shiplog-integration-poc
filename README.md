@@ -204,3 +204,105 @@ inside the connector tool. Ampersand's pitch is "fewer moving parts," but
 this architecture deliberately chose more moving parts in exchange for: a
 much bigger connector catalog, and one workflow engine for the entire
 product instead of one that's only useful for the ingestion step.
+
+## Actual CLI output - the real runs
+
+Test repo: `Vswaroop04/db-map-app`, 5 manually created test issues (so
+pagination/incremental/rate-limit tests have real data to work with).
+
+### Full benchmark, Direct + Nango + Ampersand, all green
+
+```
+🔬 Integration Benchmark — github.com/Vswaroop04/db-map-app
+Active focus: Direct API, Nango, Ampersand (others run too if their env vars are set)
+
+⚠ 4 platform(s) skipped — missing env vars (see .env.example)
+
+▶ Running: Direct GitHub API
+▶ Running: Nango
+▶ Running: Ampersand
+  ✓ 7 records in 1772ms
+  ✓ 7 records in 4041ms
+  ✓ 0 records in 13279ms
+
+=== Benchmark Results ===
+┌──────────────────────┬───────────────┬─────────────┬──────────┬───────┬──────────────┬────────────────────┐
+│ Platform             │ First Record  │ Total Sync  │ Records  │ LOC   │ Data Stored? │ Status             │
+├──────────────────────┼───────────────┼─────────────┼──────────┼───────┼──────────────┼────────────────────┤
+│ Direct GitHub API    │ 553ms         │ 1772ms      │ 7        │ 40    │ No (you own… │ ✓ Success          │
+├──────────────────────┼───────────────┼─────────────┼──────────┼───────┼──────────────┼────────────────────┤
+│ Nango                │ 2258ms        │ 4041ms      │ 7        │ 55    │ Yes (their … │ ✓ Success          │
+├──────────────────────┼───────────────┼─────────────┼──────────┼───────┼──────────────┼────────────────────┤
+│ Ampersand            │ 0ms           │ 13279ms     │ 0        │ 75    │ Pushed to y… │ ✓ Success          │
+└──────────────────────┴───────────────┴─────────────┴──────────┴───────┴──────────────┴────────────────────┘
+```
+
+Ampersand shows 0 records here because the webhook delivery landed *after*
+the adapter's wait window closed - not because it failed. Proved that with
+a separate trigger/listen run below.
+
+### Pagination, rate-limit, incremental - Nango clean across the board
+
+```
+📄 Pagination Benchmark
+┌────────────────────┬────────┬──────────┬────────┬─────────────────┬─────────────────────────────────────────────┐
+│ Platform           │ Pages  │ Records  │ Time   │ Auto paginatio… │ What you write                              │
+├────────────────────┼────────┼──────────┼────────┼─────────────────┼─────────────────────────────────────────────┤
+│ Direct GitHub API  │ 1      │ 6        │ 593ms  │ No — manual     │ Parse Link header, build loop, track nextU… │
+├────────────────────┼────────┼──────────┼────────┼─────────────────┼─────────────────────────────────────────────┤
+│ Nango              │ 1      │ 6        │ 3282ms │ No — manual     │ Use nango.paginate() in sync script — Nang… │
+└────────────────────┴────────┴──────────┴────────┴─────────────────┴─────────────────────────────────────────────┘
+
+⚡ Rate Limit Benchmark
+┌────────────────────┬───────────┬────────────┬───────────────┬──────────────────────────────────────────────────┐
+│ Platform           │ Requests  │ Hit limit? │ Auto backoff? │ What you have to do                              │
+├────────────────────┼───────────┼────────────┼───────────────┼──────────────────────────────────────────────────┤
+│ Direct GitHub API  │ 5         │ No         │ No — manual   │ You read x-ratelimit-remaining + x-ratelimit-re… │
+├────────────────────┼───────────┼────────────┼───────────────┼──────────────────────────────────────────────────┤
+│ Nango              │ 5         │ No         │ Yes ✓         │ Nango detects 429 + backs off automatically in … │
+└────────────────────┴───────────┴────────────┴───────────────┴──────────────────────────────────────────────────┘
+
+🔁 Failure Handling & Replay Benchmark
+┌────────────────┬─────────────┬────────────────────┬─────────────────┬─────────────────────────────────────────────┐
+│ Platform       │ Auto-retry? │ Raw payload store… │ Replay-from-ra… │ Notes                                       │
+├────────────────┼─────────────┼────────────────────┼─────────────────┼─────────────────────────────────────────────┤
+│ Direct GitHub… │ No          │ No                 │ No              │ You catch the error, decide retry/DLQ, and… │
+├────────────────┼─────────────┼────────────────────┼─────────────────┼─────────────────────────────────────────────┤
+│ Nango          │ Yes ✓       │ No                 │ No              │ Nango retries transient errors, but re-run… │
+└────────────────┴─────────────┴────────────────────┴─────────────────┴─────────────────────────────────────────────┘
+
+🔄 Incremental Sync Benchmark
+┌──────────────┬───────────┬─────────────┬──────────────────┬────────────────────┬─────────────────────────────────────────────┐
+│ Platform     │ Full sync │ Incremental │ Cursor tracked … │ Native sync engin… │ Notes                                       │
+├──────────────┼───────────┼─────────────┼──────────────────┼────────────────────┼─────────────────────────────────────────────┤
+│ Direct GitH… │ 6         │ 6           │ You              │ No                 │ GitHub supports `?since=`, but you store/p… │
+├──────────────┼───────────┼─────────────┼──────────────────┼────────────────────┼─────────────────────────────────────────────┤
+│ Nango        │ 6         │ 6           │ You              │ Yes ✓              │ Via proxy, same manual cursor as Direct. N… │
+└──────────────┴───────────┴─────────────┴──────────────────┴────────────────────┴─────────────────────────────────────────────┘
+```
+
+### Proving the Ampersand delivery actually works - decoupled trigger + listen
+
+```
+$ npm run trigger
+Triggered at 2026-06-16T13:01:25.049Z, operationId: 019ed085-bb4f-7330-a352-d3717b973a70
+
+$ npm run listen
+Listening on http://localhost:4242
+--- 2026-06-16T13:01:27.868Z POST / ---
+{
+  "action": "read",
+  "groupRef": "vishnu3",
+  "objectName": "issues",
+  "operationTime": "2026-06-16T13:01:27.122792504Z",
+  "readType": "triggered",
+  "result": [ /* 5 issues, each with both "fields" (normalized)
+                 and "raw" (full untouched GitHub payload) */ ],
+  "resultInfo": { "numRecords": 5, "type": "inline" }
+}
+```
+
+Trigger → 13:01:25.049Z. Ampersand's internal processing done →
+13:01:27.122Z (~2.07s). Webhook actually landed → 13:01:27.868Z (~750ms
+more). **~2.8s trigger-to-delivery, measured for real** - not the
+sub-second number from their marketing, but a real, defensible figure now.
