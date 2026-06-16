@@ -18,7 +18,7 @@ primitive you need for "give me only what changed since last time." So even
 though it's in the same general category as Nango, it doesn't fit this use
 case.
 
-## The 4 candidates
+## The candidates
 
 - **Nango** - code-first, you write the sync logic, they run it on their
   infra and handle OAuth + retries
@@ -27,10 +27,23 @@ case.
 - **Airbyte** - open source ELT, syncs into a destination warehouse you
   configure, not request/response
 - **Fivetran** - same ELT model as Airbyte, fully managed, zero sync code
+- **Ampersand** - added later, see below. Claims to ship the orchestration
+  layer (retries, rate-limit backoff, backfills) that Nango leaves to you,
+  plus event-driven webhooks instead of polling
 
-These 4 all actually have a "sync" primitive built in (scheduled runs,
-incremental state). Alloy and Composio/Truto don't really - they're more
+These all actually have a "sync" primitive built in (scheduled runs,
+incremental state). Alloy and Composio don't really - they're more
 proxy/action layers.
+
+**Truto - couldn't actually test it.** No self-serve signup, you have to
+contact sales to get an account. Ruled it out on that alone - not worth the
+back-and-forth for a side project benchmark, and if it's that gated to even
+try, it's not a realistic option to evaluate quickly anyway.
+
+**Also looked at and ruled out:** Corsair (open source, but built for AI
+agent action execution with permission gates, not continuous data sync -
+same category mismatch as Alloy) and Knit (another Merge.dev-style unified
+API, doesn't add anything Merge.dev doesn't already cover).
 
 ## What's in here
 
@@ -101,6 +114,32 @@ Still custom either way: long-term immutable raw storage for compliance,
 the actual normalization logic, and entity resolution across sources. But
 auth + fetch + retries + DLQ + cheap replay is a big chunk of the problem
 covered by just these two pieces together.
+
+## Ampersand - testing whether it replaces the combo above
+
+Found this while looking around for more options. Their own marketing
+(comparison page against Nango, so take it with a grain of salt) claims:
+
+- event-driven webhooks instead of polling (sub-second vs "5 min minimum
+  typical" for Nango)
+- retries, rate-limit backoff, and backfills built into the platform itself,
+  not something you write
+
+If that's actually true, it's a real challenge to the "Nango + Inngest"
+conclusion above - a single platform instead of two. Added an adapter to
+test it.
+
+One thing that matters architecturally: their read API is push-based, not
+pull. You POST a trigger-read call, and records get delivered to a webhook
+destination you configure ahead of time in their dashboard - the trigger
+call itself doesn't hand you the data back. So the adapter has to run a
+local HTTP listener, and for it to receive anything that listener needs to
+be tunneled (ngrok) and registered as the destination first. Same setup
+cost as Airbyte/Fivetran's destination requirement, just a webhook instead
+of a database.
+
+Haven't verified the retry/backoff claims hands-on yet - that's the actual
+test to run before relying on this in the interview.
 
 ## Checked this against a real example at work
 
