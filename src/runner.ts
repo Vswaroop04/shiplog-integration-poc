@@ -50,6 +50,8 @@ export function printReport(results: (SyncResult | null)[]) {
     "Merge.dev": "Yes (their infra)",
     "Composio": "Yes (their infra)",
     "Truto": chalk.green("No (pass-through)"),
+    "Airbyte": "Yes (your warehouse)",
+    "Fivetran": "Yes (your warehouse)",
   };
 
   for (const r of results) {
