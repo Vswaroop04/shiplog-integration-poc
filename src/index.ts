@@ -12,6 +12,7 @@ import { runPaginationBenchmark } from "./tests/pagination";
 import { runRateLimitBenchmark } from "./tests/rate-limit";
 import { runFailureReplayBenchmark } from "./tests/failures-replay";
 import { runIncrementalSyncBenchmark } from "./tests/incremental";
+import { runAmpersandClaimsVerification } from "./tests/verify-ampersand-claims";
 import { IntegrationAdapter } from "./adapters/base";
 import chalk from "chalk";
 
@@ -53,6 +54,10 @@ async function main() {
   await runRateLimitBenchmark(OWNER, REPO);
   await runFailureReplayBenchmark(OWNER, REPO);
   await runIncrementalSyncBenchmark(OWNER, REPO);
+
+  if (process.env.AMPERSAND_API_KEY && process.env.AMPERSAND_INTEGRATION_ID) {
+    await runAmpersandClaimsVerification(OWNER, REPO);
+  }
 }
 
 main().catch(err => {
