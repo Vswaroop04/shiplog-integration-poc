@@ -35,12 +35,9 @@ These all actually have a "sync" primitive built in (scheduled runs,
 incremental state). Alloy and Composio don't really - they're more
 proxy/action layers.
 
-**Truto - couldn't actually test it.** No self-serve signup, you have to
-contact sales to get an account. Ruled it out on that alone - not worth the
-back-and-forth for a side project benchmark, and if it's that gated to even
-try, it's not a realistic option to evaluate quickly anyway.
-
-**Also looked at and ruled out:** Corsair (open source, but built for AI
+**Also looked at and ruled out:** Truto (no self-serve signup, you have to
+contact sales just to get an account - not worth it for a benchmark, removed
+the adapter entirely), Corsair (open source, but built for AI
 agent action execution with permission gates, not continuous data sync -
 same category mismatch as Alloy) and Knit (another Merge.dev-style unified
 API, doesn't add anything Merge.dev doesn't already cover).
@@ -167,3 +164,43 @@ logged, retried implicitly whenever the cron runs again next time. No
 backoff, no DLQ, no per-failure replay. Which lines up with the
 orchestration gap above - the auth/fetch problem was never the hard part
 here, the missing piece is the same Inngest-shaped layer.
+
+## The company's actual architecture diagram confirms all of this
+
+Got hold of the real product architecture diagram for the company I'm
+interviewing with. The Integration layer is, almost exactly, the "Nango +
+Inngest + custom raw landing zone" conclusion above - not Ampersand, not
+Airbyte, not Fivetran:
+
+- **Nango adapters** - OAuth vault, "60+ connectors live, 400+ more
+  available via Nango" - explicitly called out on the sources row of the
+  diagram as the GTM lever: when a new customer asks for a provider that
+  isn't built yet, there's a good chance Nango already has it, so it's
+  near-zero-cost to add instead of building a custom adapter
+- **Raw landing zone** - gzip + sha256, immutable object storage. The
+  literal thing I kept saying nobody sells - confirmed, they built it
+  themselves
+- **Ingestion manifest** - a state machine table (pending/normalized/failed)
+  for tracking what's been processed - also custom
+- **Inngest** - listed under their tech stack as the workflow engine, with
+  per-org concurrency - and it's not scoped to just the integration layer,
+  it's reused across the whole product (the Intelligence layer also has a
+  "cron/webhook/user trigger" step). So it's a horizontal piece of
+  infrastructure, not something tied to whichever connector platform they
+  picked
+- Backfill is explicitly "progressive: 30d -> 90d -> full, resumable,
+  checkpointed, replay from raw on any change" - same idea as the
+  incremental/replay tests above, just with the custom landing zone backing
+  it instead of relying on any platform's built-in replay (there isn't one)
+
+So this answers the "is Ampersand better for our use case" question pretty
+directly: no, at least not for replacing Nango here. The reason isn't that
+Ampersand's claims are false, it's that the actual decision they made was
+to deliberately split this into a broad, lower-level connector layer
+(Nango, optimized for *connector count* since that's the GTM lever) and a
+separate general-purpose orchestration layer (Inngest, reused everywhere,
+not just for sync) - rather than an all-in-one platform that bundles both
+inside the connector tool. Ampersand's pitch is "fewer moving parts," but
+this architecture deliberately chose more moving parts in exchange for: a
+much bigger connector catalog, and one workflow engine for the entire
+product instead of one that's only useful for the ingestion step.

@@ -9,7 +9,7 @@ import { clearAdapter, insertIssue } from "../db";
 // and writes normalized rows into a destination YOU configure (here: Postgres).
 // Your code then reads from that destination, not from Airbyte's API.
 //
-// This is the fundamental architectural difference vs Nango/Merge/Truto:
+// This is the fundamental architectural difference vs Nango/Merge:
 // those are "pull on demand" platforms. Airbyte/Fivetran are "push to warehouse."
 export class AirbyteAdapter implements IntegrationAdapter {
   name = "Airbyte";

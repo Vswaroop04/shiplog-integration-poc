@@ -126,42 +126,6 @@ async function testMerge(): Promise<PaginationResult> {
   };
 }
 
-// --- Truto: pass-through proxy, GitHub Link headers come through as-is ---
-async function testTruto(owner: string, repo: string): Promise<PaginationResult> {
-  const start = Date.now();
-  let totalRecords = 0;
-  let pagesNeeded = 0;
-  let nextUrl: string | undefined =
-    `https://api.truto.one/proxy/github/repos/${owner}/${repo}/issues?state=all&per_page=30`;
-
-  // Truto passes GitHub's Link headers straight through — same problem as direct
-  while (nextUrl && pagesNeeded < 3) {
-    const res = await fetch(nextUrl, {
-      headers: {
-        Authorization: `Bearer ${process.env.TRUTO_API_TOKEN}`,
-        "x-integration-account-id": process.env.TRUTO_INTEGRATION_ACCOUNT_ID!,
-      },
-    });
-    if (!res.ok) break;
-    const data = await res.json() as any[];
-    totalRecords += data.length;
-    pagesNeeded++;
-
-    const linkHeader = res.headers.get("link") ?? "";
-    const { next } = parseLinkHeader(linkHeader);
-    nextUrl = next;
-  }
-
-  return {
-    adapter: "Truto",
-    pagesNeeded,
-    totalRecords,
-    totalMs: Date.now() - start,
-    handledAutomatically: false,
-    codeRequired: "Same as direct — Link headers pass through, you parse them",
-  };
-}
-
 export async function runPaginationBenchmark(owner: string, repo: string) {
   console.log(chalk.bold("\n📄 Pagination Benchmark"));
   console.log(chalk.gray("Tests how much pagination complexity each platform hides from you\n"));
@@ -170,7 +134,6 @@ export async function runPaginationBenchmark(owner: string, repo: string) {
     { name: "Direct", fn: () => testDirect(owner, repo) },
     ...(process.env.NANGO_SECRET_KEY ? [{ name: "Nango", fn: () => testNango(owner, repo) }] : []),
     ...(process.env.MERGE_ACCESS_TOKEN ? [{ name: "Merge.dev", fn: () => testMerge() }] : []),
-    ...(process.env.TRUTO_API_TOKEN ? [{ name: "Truto", fn: () => testTruto(owner, repo) }] : []),
   ];
 
   const results: PaginationResult[] = [];
