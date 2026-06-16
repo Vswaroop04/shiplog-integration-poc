@@ -1,10 +1,7 @@
 # integration-benchmark
 
 Researching what's the best way to handle data ingestion / continuous sync from
-third-party providers (GitHub, Linear, etc) into our own system. This came up
-because of an interview question about enterprise integrations and sync
-pipelines - "Nango or Airbyte or Fivetran style, what did you build, how did
-you handle failures and replay."
+third-party providers (GitHub, Linear, etc) into our system.
 
 The actual problem we care about: continuously pulling data from a bunch of
 providers, keeping it in sync over time, and being able to recover/replay if
@@ -81,3 +78,26 @@ those up live, the code is there mostly to show the architecture difference
   but none of them link the same real-world entity across different sources
   (a Jira ticket and a Salesforce deal about the same thing) - that part is
   always custom
+
+## What none of these solve on their own: orchestration/reliability
+
+Connect + fetch is one problem. Retries, DLQ, per-tenant concurrency, and
+replay are a separate problem, and none of the 4 candidates really solve it.
+
+The combo that actually covers most of this: **Nango + a durable workflow
+engine like Inngest** (could also be Trigger.dev or Temporal, Inngest is
+just the one with the simplest mental model).
+
+- Nango handles auth + scheduled fetch + pagination/rate limits
+- Inngest wraps the sync as a step function - automatic retries, DLQ for
+  failed runs, concurrency limits per org
+- side benefit: Inngest caches each step's output, so if step 2
+  (normalize) has a bug and you fix it, replaying the run reuses the
+  cached output of step 1 (the fetch) instead of re-hitting the source
+  API. That's basically "replay from raw" without building a landing zone
+  from scratch.
+
+Still custom either way: long-term immutable raw storage for compliance,
+the actual normalization logic, and entity resolution across sources. But
+auth + fetch + retries + DLQ + cheap replay is a big chunk of the problem
+covered by just these two pieces together.
