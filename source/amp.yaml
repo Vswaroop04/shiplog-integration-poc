@@ -1,0 +1,24 @@
+specVersion: 1.0.0
+integrations:
+  - name: integration-benchmark-github
+    displayName: Integration Benchmark - GitHub
+    provider: github
+    read:
+      objects:
+        - objectName: issues
+          destination: issuesWebhook
+          # Every 30 min for the deployed/scheduled path. The benchmark
+          # itself uses the on-demand trigger-read API instead of waiting
+          # on this schedule, but Ampersand still requires a schedule to be
+          # declared for the object.
+          schedule: "*/30 * * * *"
+          backfill:
+            defaultPeriod:
+              fullHistory: true
+          requiredFields:
+            - fieldName: id
+            - fieldName: number
+            - fieldName: title
+            - fieldName: state
+            - fieldName: body
+            - fieldName: created_at

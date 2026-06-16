@@ -24,7 +24,7 @@ async function main() {
   initDb();
 
   console.log(chalk.bold(`\n🔬 Integration Benchmark — github.com/${OWNER}/${REPO}`));
-  console.log(chalk.gray("Platforms: Direct API, Nango, Merge.dev, Composio, Airbyte, Fivetran, Ampersand\n"));
+  console.log(chalk.gray("Active focus: Direct API, Nango, Ampersand (others run too if their env vars are set)\n"));
 
   // Each adapter is only included if its required env vars are present.
   // Run `npm run benchmark` to run all configured platforms.

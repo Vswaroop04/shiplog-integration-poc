@@ -103,6 +103,37 @@ Custom logic/DB: same as Nango, plus you need the webhook receiver running
 *before* you can test anything, plus you store the last-synced timestamp
 yourself (their `sinceTimestamp` param doesn't persist on their side).
 
+**Correction after reading their actual quickstart docs** (not just the
+marketing comparison page): the primary read mechanism isn't really the
+`trigger-read` REST call - it's a declarative manifest (`amp.yaml`) you
+write and deploy via their CLI:
+
+```yaml
+read:
+  objects:
+    - objectName: issues
+      destination: issuesWebhook
+      schedule: "*/30 * * * *"   # a literal cron string you set
+      backfill:
+        defaultPeriod:
+          fullHistory: true
+```
+
+```bash
+amp login
+amp deploy source --project=<project-id>
+```
+
+Two things this corrects:
+1. **"Sub-second webhooks" almost certainly means provider-native webhook
+   relay for providers that support it** (e.g. if the source pushes events
+   itself), not the general read mechanism - which is plain cron polling,
+   same category as Nango's. The schedule is something *you* configure,
+   not an inherent platform property.
+2. Deploying via CLI means this is still config-as-code, same as Nango's
+   deployed sync scripts - "less code" is relative (YAML instead of
+   TypeScript), not "no setup."
+
 ## 3. Merge.dev
 
 Pull, synchronous REST calls. Merge polls the underlying provider on its

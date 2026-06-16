@@ -72,6 +72,28 @@ Two very different flavors, and people often lump them together:
   partner APIs (e.g. our Kuehne+Nagel integration) use this. It's ~30 lines
   of code, no platform needed.
 
+One more dimension that matters: **single-tenant vs multi-tenant.** If
+it's just you connecting your own GitHub account, OAuth complexity barely
+exists - one token, you manage it. The actual hard case is when you have
+N customers, each authorizing their own account through the same OAuth
+App (registered once, representing your product), and you need to keep
+N separate token pairs refreshed and isolated:
+
+```
+              Your OAuth App (registered once)
+                          │
+        ┌─────────────────┼─────────────────┐
+        ▼                 ▼                 ▼
+   Customer A         Customer B         Customer C
+   groupRef: A        groupRef: B        groupRef: C
+   their own token    their own token    their own token
+```
+
+This is the actual case Nango/Ampersand/Merge solve well - managing
+refresh across many isolated, customer-owned tokens. At read time you pass
+the specific customer's ID (`groupRef` for Ampersand, `connectionId` for
+Nango) so it pulls from *their* connection, not anyone else's.
+
 The mistake is assuming every API auth problem needs Nango. Check which
 kind of OAuth you're actually dealing with first.
 
