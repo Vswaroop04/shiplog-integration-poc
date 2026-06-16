@@ -71,37 +71,79 @@ Custom logic/DB needed from day one: raw storage, ingestion manifest. Nango
 doesn't normalize, doesn't replay, doesn't give you a DLQ for your own
 downstream processing failures.
 
-## 2. Ampersand
+## 2. Ampersand - fully async, three decoupled hops
 
-Hybrid - you trigger a read (pull-style call), but the actual records
-arrive later via a webhook to a destination you configured ahead of time
-in their dashboard.
+This is the core architectural difference from Nango, worth being precise
+about: a trigger-read is **not** one request/response. It's three separate
+hops, each with its own latency, none of them blocking the others:
 
 ```
-GitHub/etc
-        ▲ Ampersand fetches on your trigger
-        │
-┌─────────────────────────────┐
-│          AMPERSAND            │
-│  POST trigger-read            │
-│  → returns operationId only   │
-└─────────────────────────────┘
-        │ you poll operation status        │ ...separately, pushes the
-        ▼                                   │  actual records here:
-┌─────────────┐                     ┌──────────────────────┐
-│ your app     │                     │ your public webhook    │
-│ (status only)│                     │ receiver (needs to       │
-└─────────────┘                     │ exist + be tunneled       │
-                                     │ BEFORE you trigger)        │
-                                     └──────────────────────┘
-                                              │
-                                              ▼
-                    [Raw Landing Zone] (custom) → [Ingestion Manifest] (custom)
+ HOP 1 - trigger (synchronous, fast)              T+0ms
+ ─────────────────────────────────────
+   your app                 AMPERSAND
+       │  POST trigger-read     │
+       ├────────────────────────▶
+       │                        │  starts an async job,
+       │  ◀─ operationId only ──┤  does NOT wait for it
+       │     (HTTP call ends     │  to finish
+       │      here - ~instant)   │
+                                 ▼
+                         ┌───────────────┐
+                         │  fetch GitHub   │  (this runs in the
+                         │  + process       │   background, your
+                         └───────────────┘   HTTP call already
+                                 │            returned)
+                                 ▼
+ HOP 2 - status (you poll, separately)          T+0 to T+~2070ms
+ ─────────────────────────────────────
+   your app                 AMPERSAND
+       │  GET operation status  │   (repeat every ~3s
+       ├────────────────────────▶    until status flips
+       │  ◀── "in_progress" ────┤    from in_progress
+       ├────────────────────────▶    to success)
+       │  ◀──── "success" ──────┤   measured: ~2.07s after
+                                     trigger, in our test
+
+ HOP 3 - delivery (push, via Svix, fully decoupled) T+~2070 to T+~2820ms
+ ─────────────────────────────────────
+                         ┌───────────────┐
+                         │  AMPERSAND      │
+                         │  hands off to   │
+                         │  Svix for        │
+                         │  webhook delivery │
+                         └───────┬───────┘
+                                 │ POST (your destination URL,
+                                 │  registered ahead of time)
+                                 ▼
+                         ┌───────────────┐
+                         │ your webhook    │  ◀── records actually
+                         │ receiver         │      arrive HERE,
+                         └───────────────┘      ~750ms after Hop 2
+                                                  finished (measured)
+                                 │
+                                 ▼
+              [Raw Landing Zone] (custom) → [Ingestion Manifest] (custom)
 ```
 
-Custom logic/DB: same as Nango, plus you need the webhook receiver running
-*before* you can test anything, plus you store the last-synced timestamp
-yourself (their `sinceTimestamp` param doesn't persist on their side).
+**Measured end to end (real numbers from this benchmark):** trigger at
+`T+0`, Ampersand's internal processing done at `T+2070ms`, webhook actually
+landing at `T+2820ms`. Total ~2.8s - not sub-second as marketed, but the
+useful insight is *where* the time goes: ~2s is GitHub fetch + processing
+(comparable to any API call), ~750ms is specifically the Svix delivery hop
+- a cost Nango's synchronous proxy model doesn't have at all, because it
+never decouples the request from the response in the first place.
+
+This is also exactly why this model is a poor fit for live agent tool
+calls: hop 1 returns instantly, but the data you actually want shows up
+~2.8s later, on a completely different code path (your webhook handler,
+not the original caller). An LLM mid-turn waiting on a tool result can't
+naturally consume that without its own polling/waiting logic bolted on -
+Nango's proxy just returns the answer in the same call.
+
+Custom logic/DB needed either way: same as Nango, plus you need the
+webhook receiver running *before* you can test anything, plus you store
+the last-synced timestamp yourself (their `sinceTimestamp` param doesn't
+persist on their side).
 
 **Correction after reading their actual quickstart docs** (not just the
 marketing comparison page): the primary read mechanism isn't really the
@@ -362,3 +404,26 @@ which platform handles the actual fetch. That's the whole argument this
 research has been building toward: the platform choice matters less than
 people assume, because most of the hard, differentiated work starts
 *after* the data has already arrived.
+
+## Final verdict: Nango over Ampersand, for this specific product
+
+After actually testing both hands-on (not just reading marketing pages):
+
+|  | Nango | Ampersand |
+|---|---|---|
+| Time to first real data | Minutes | Hours - OAuth app + scopes + manifest + CLI deploy + destination + installation |
+| Reliability under test | Clean across all 5 tests once config was right | Found a real bug - bad default OAuth scopes caused an infinite retry loop with no circuit breaker and no cancel mechanism |
+| Latency model | Synchronous, ~500ms | Async, ~2.8s measured end-to-end - not sub-second as marketed |
+| Fits live agent tool-calls | Yes - direct request/response | No - the data arrives on a separate webhook hop, ~2.8s later, not in the original call |
+| Connector breadth | 60+ live / 400+ available (the GTM lever) | Smaller catalog |
+| Already validated | This is literally what's in Shiplog's own production architecture | Untested anywhere we can see |
+| Genuine point in its favor | - | Webhook payload includes raw provider data alongside normalized fields - Merge.dev has neither |
+
+The deciding factor isn't even the bug we found (which we fixed) - it's
+that Ampersand's architecture is fundamentally async (trigger → poll →
+separate webhook delivery), which is the wrong shape for a product that
+needs both continuous sync *and* synchronous answers for live agent tool
+calls mid-conversation. Nango's proxy model fits both. Ampersand's bundled
+orchestration pitch also loses force once you know Inngest already runs
+company-wide regardless of connector choice - adopting Ampersand wouldn't
+remove that infrastructure, just add a second async layer next to it.
