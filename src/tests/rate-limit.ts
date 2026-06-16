@@ -84,7 +84,7 @@ async function testNango(owner: string, repo: string): Promise<RateLimitResult> 
       await nango.proxy({
         method: "GET",
         endpoint: `/repos/${owner}/${repo}/issues?per_page=1&page=${i + 1}`,
-        providerConfigKey: "github",
+        providerConfigKey: process.env.NANGO_PROVIDER_CONFIG_KEY ?? "github",
         connectionId,
         // Nango automatically backs off on 429/403 and retries — you don't configure this
       });

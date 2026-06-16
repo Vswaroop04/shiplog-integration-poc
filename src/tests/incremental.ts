@@ -59,21 +59,35 @@ async function testNango(owner: string, repo: string): Promise<IncrementalResult
   const nango = new Nango({ secretKey: process.env.NANGO_SECRET_KEY! });
   const connectionId = process.env.NANGO_CONNECTION_ID!;
 
-  const fullRes = await nango.proxy({
-    method: "GET",
-    endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30`,
-    providerConfigKey: "github",
-    connectionId,
-  });
+  const providerConfigKey = process.env.NANGO_PROVIDER_CONFIG_KEY ?? "github";
+
+  let fullRes;
+  try {
+    fullRes = await nango.proxy({
+      method: "GET",
+      endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30`,
+      providerConfigKey,
+      connectionId,
+    });
+  } catch (err: any) {
+    const detail = err?.response?.data ?? err?.message;
+    throw new Error(`Nango full-sync proxy call failed: ${JSON.stringify(detail)}`);
+  }
   const full = (fullRes.data as any[]) ?? [];
 
   const cursor = isoMinutesAgo(30 * 24 * 60);
-  const incRes = await nango.proxy({
-    method: "GET",
-    endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30&since=${cursor}`,
-    providerConfigKey: "github",
-    connectionId,
-  });
+  let incRes;
+  try {
+    incRes = await nango.proxy({
+      method: "GET",
+      endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30&since=${cursor}`,
+      providerConfigKey,
+      connectionId,
+    });
+  } catch (err: any) {
+    const detail = err?.response?.data ?? err?.message;
+    throw new Error(`Nango incremental proxy call failed: ${JSON.stringify(detail)}`);
+  }
   const incremental = (incRes.data as any[]) ?? [];
 
   return {

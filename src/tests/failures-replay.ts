@@ -50,7 +50,7 @@ async function testNango(owner: string, repo: string): Promise<FailureReplayResu
     await nango.proxy({
       method: "GET",
       endpoint: `/repos/${owner}/${repo}/issues/999999999`,
-      providerConfigKey: "github",
+      providerConfigKey: process.env.NANGO_PROVIDER_CONFIG_KEY ?? "github",
       connectionId,
     });
   } catch (err: any) {

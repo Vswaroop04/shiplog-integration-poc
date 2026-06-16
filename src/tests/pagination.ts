@@ -67,15 +67,23 @@ async function testNango(owner: string, repo: string): Promise<PaginationResult>
   let totalRecords = 0;
   let pagesNeeded = 0;
 
+  const providerConfigKey = process.env.NANGO_PROVIDER_CONFIG_KEY ?? "github";
+
   // In a real Nango sync script you'd call nango.paginate() which handles Link headers.
   // Here we simulate what that script does via the proxy.
   for (let page = 1; page <= 3; page++) {
-    const res = await nango.proxy({
-      method: "GET",
-      endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30&page=${page}`,
-      providerConfigKey: "github",
-      connectionId,
-    });
+    let res;
+    try {
+      res = await nango.proxy({
+        method: "GET",
+        endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30&page=${page}`,
+        providerConfigKey,
+        connectionId,
+      });
+    } catch (err: any) {
+      const detail = err?.response?.data ?? err?.message;
+      throw new Error(`Nango proxy failed on page ${page}: ${JSON.stringify(detail)}`);
+    }
     const data = res.data as any[];
     if (!data?.length) break;
     totalRecords += data.length;

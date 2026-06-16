@@ -58,12 +58,18 @@ export class NangoAdapter implements IntegrationAdapter {
 
     // Fetch issues via Nango proxy (Nango handles rate limits + retries)
     for (let page = 1; page <= 3; page++) {
-      const issuesRes = await this.nango.proxy({
-        method: "GET",
-        endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30&page=${page}`,
-        providerConfigKey: "github",
-        connectionId,
-      });
+      let issuesRes;
+      try {
+        issuesRes = await this.nango.proxy({
+          method: "GET",
+          endpoint: `/repos/${owner}/${repo}/issues?state=all&per_page=30&page=${page}`,
+          providerConfigKey,
+          connectionId,
+        });
+      } catch (err: any) {
+        const detail = err?.response?.data ?? err?.message;
+        throw new Error(`Nango proxy failed fetching issues page ${page} (providerConfigKey="${providerConfigKey}"): ${JSON.stringify(detail)}`);
+      }
       const issuesData = issuesRes.data as any[];
       if (!issuesData?.length) break;
 
