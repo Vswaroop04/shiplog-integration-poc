@@ -8,7 +8,9 @@ import "dotenv/config";
 async function main() {
   const apiKey = process.env.AMPERSAND_API_KEY;
   const projectId = process.env.AMPERSAND_PROJECT_ID;
-  const groupRef = process.env.AMPERSAND_GROUP_REF ?? "my-test-account";
+  // `??` only falls back on null/undefined - an empty string from
+  // AMPERSAND_GROUP_REF= in .env still passes through as "", so use `||`
+  const groupRef = process.env.AMPERSAND_GROUP_REF || "my-test-account";
 
   if (!apiKey || !projectId) {
     console.error("Set AMPERSAND_API_KEY and AMPERSAND_PROJECT_ID in .env first.");
