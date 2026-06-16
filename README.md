@@ -101,3 +101,30 @@ Still custom either way: long-term immutable raw storage for compliance,
 the actual normalization logic, and entity resolution across sources. But
 auth + fetch + retries + DLQ + cheap replay is a big chunk of the problem
 covered by just these two pieces together.
+
+## Checked this against a real example at work
+
+We already have two different integrations with the same partner (a freight
+forwarder) at work, which turned out to be a good real-world check on all of
+this:
+
+- One direction is event-driven: the partner pushes data to us via a webhook
+  through a workflow-automation tool (their workflow just forwards the
+  payload to our API). No polling, no cursor - this matches exactly the
+  "trigger" shape that ruled Alloy out for the *sync* problem above. Good
+  tool for that job, just not this one.
+- The other direction is a pull: we have our own cronjob that calls the
+  partner's API daily. Auth there is OAuth2 client_credentials grant - a
+  static client_id/secret per customer, no refresh token, no per-user
+  consent flow. It's like 30 lines of code, already written by hand, no
+  connector platform involved at all.
+
+That second one is the useful data point: it shows Nango's actual value
+(managing complex delegated OAuth + refresh tokens across many different
+end-user accounts) just doesn't apply to a lot of B2B/enterprise partner
+APIs. Those tend to use simple static credentials. The thing that *is*
+missing in that cronjob is reliability - failures are just counted and
+logged, retried implicitly whenever the cron runs again next time. No
+backoff, no DLQ, no per-failure replay. Which lines up with the
+orchestration gap above - the auth/fetch problem was never the hard part
+here, the missing piece is the same Inngest-shaped layer.
