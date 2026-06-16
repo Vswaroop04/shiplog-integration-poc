@@ -24,13 +24,23 @@ export class NangoAdapter implements IntegrationAdapter {
     const issues: GitHubIssue[] = [];
     const connectionId = process.env.NANGO_CONNECTION_ID!;
 
-    // Nango proxy: authenticated request through Nango's managed OAuth
-    const repoRes = await this.nango.proxy({
-      method: "GET",
-      endpoint: `/repos/${owner}/${repo}`,
-      providerConfigKey: "github",
-      connectionId,
-    });
+    // Nango proxy: authenticated request through Nango's managed OAuth.
+    // providerConfigKey must exactly match the Integration ID shown in the
+    // Nango dashboard for this GitHub integration - a mismatch here is the
+    // most common cause of a 404 from this call.
+    const providerConfigKey = process.env.NANGO_PROVIDER_CONFIG_KEY ?? "github";
+    let repoRes;
+    try {
+      repoRes = await this.nango.proxy({
+        method: "GET",
+        endpoint: `/repos/${owner}/${repo}`,
+        providerConfigKey,
+        connectionId,
+      });
+    } catch (err: any) {
+      const detail = err?.response?.data ?? err?.message;
+      throw new Error(`Nango proxy failed (providerConfigKey="${providerConfigKey}", connectionId="${connectionId}"): ${JSON.stringify(detail)}`);
+    }
     const repoData = repoRes.data as any;
 
     const r: GitHubRepo = {
